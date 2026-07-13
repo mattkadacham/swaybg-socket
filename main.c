@@ -2,6 +2,7 @@
 #include <ctype.h>
 #include <getopt.h>
 #include <errno.h>
+#include <limits.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -67,6 +68,7 @@ struct swaybg_state {
 	char *current_path;
 	const char *socket_path;
 	int socket_fd;
+	bool socket_disabled;
 	bool run_display;
 };
 
@@ -557,10 +559,6 @@ static void handle_ipc_command(struct swaybg_state *state,
 }
 
 static int dispatch_next_event(struct swaybg_state *state) {
-	if (state->socket_fd == -1) {
-		return wl_display_dispatch(state->display);
-	}
-
 	bool needs_flush = false;
 	if (wl_display_flush(state->display) == -1) {
 		if (errno != EAGAIN) {
@@ -569,21 +567,22 @@ static int dispatch_next_event(struct swaybg_state *state) {
 		needs_flush = true;
 	}
 
-	struct pollfd fds[] = {
+	struct pollfd fds[2] = {
 		{
 			.fd = wl_display_get_fd(state->display),
 			.events = POLLIN | (needs_flush ? POLLOUT : 0),
 		},
 		{ .fd = state->socket_fd, .events = POLLIN },
 	};
-	int ready = poll(fds, 2, -1);
+	nfds_t count = state->socket_fd == -1 ? 1 : 2;
+	int ready = poll(fds, count, -1);
 	if (ready == -1) {
 		return errno == EINTR ? 0 : -1;
 	}
 	if (fds[0].revents & (POLLERR | POLLHUP | POLLNVAL)) {
 		return -1;
 	}
-	if (fds[1].revents & POLLIN) {
+	if (count == 2 && fds[1].revents & POLLIN) {
 		struct ipc_message message;
 		if (ipc_receive_message(state->socket_fd, &message) == 0) {
 			handle_ipc_command(state, &message);
@@ -836,11 +835,13 @@ static bool store_swaybg_output_config(struct swaybg_state *state,
 
 static void parse_command_line(int argc, char **argv,
 		struct swaybg_state *state) {
+	enum { OPT_NO_SOCKET = 256 };
 	static struct option long_options[] = {
 		{"color", required_argument, NULL, 'c'},
 		{"help", no_argument, NULL, 'h'},
 		{"image", required_argument, NULL, 'i'},
 		{"mode", required_argument, NULL, 'm'},
+		{"no-socket", no_argument, NULL, OPT_NO_SOCKET},
 		{"output", required_argument, NULL, 'o'},
 		{"socket", required_argument, NULL, 's'},
 		{"version", no_argument, NULL, 'v'},
@@ -854,6 +855,7 @@ static void parse_command_line(int argc, char **argv,
 		"  -h, --help             Show help message and quit.\n"
 		"  -i, --image <path>     Set the image to display.\n"
 		"  -m, --mode <mode>      Set the mode to use for the image.\n"
+		"      --no-socket        Disable the default IPC socket.\n"
 		"  -o, --output <name>    Set the output to operate on or * for all.\n"
 		"  -s, --socket <path>    Listen for image changes on a Unix socket.\n"
 		"  -v, --version          Show the version number and quit.\n"
@@ -902,6 +904,11 @@ static void parse_command_line(int argc, char **argv,
 			break;
 		case 's':  // socket
 			state->socket_path = optarg;
+			state->socket_disabled = false;
+			break;
+		case OPT_NO_SOCKET:
+			state->socket_disabled = true;
+			state->socket_path = NULL;
 			break;
 		case 'v':  // version
 			fprintf(stdout, "swaybg version " SWAYBG_VERSION "\n");
@@ -924,9 +931,6 @@ static void parse_command_line(int argc, char **argv,
 		wl_list_for_each_safe(config, tmp, &state->configs, link) {
 			destroy_swaybg_output_config(config);
 		}
-		// continue into empty list
-	}
-	if (wl_list_empty(&state->configs)) {
 		fprintf(stderr, "%s", usage);
 		exit(EXIT_FAILURE);
 	}
@@ -942,6 +946,18 @@ static void parse_command_line(int argc, char **argv,
 				? BACKGROUND_MODE_STRETCH
 				: BACKGROUND_MODE_SOLID_COLOR;
 		}
+	}
+
+	if (wl_list_empty(&state->configs)) {
+		if (state->socket_disabled) {
+			fprintf(stderr, "%s", usage);
+			exit(EXIT_FAILURE);
+		}
+		config = calloc(1, sizeof(*config));
+		config->output = strdup("*");
+		config->mode = BACKGROUND_MODE_SOLID_COLOR;
+		config->color = 0x000000ff;
+		wl_list_insert(&state->configs, &config->link);
 	}
 }
 
@@ -960,6 +976,22 @@ int main(int argc, char **argv) {
 	wl_list_init(&state.cache);
 
 	parse_command_line(argc, argv, &state);
+	char default_socket[PATH_MAX];
+	if (!state.socket_disabled && !state.socket_path) {
+		const char *runtime_dir = getenv("XDG_RUNTIME_DIR");
+		if (!runtime_dir || runtime_dir[0] == '\0') {
+			swaybg_log(LOG_ERROR,
+				"XDG_RUNTIME_DIR is not set; use --socket <path> or --no-socket");
+			return 1;
+		}
+		int length = snprintf(default_socket, sizeof(default_socket),
+			"%s/swaybg.sock", runtime_dir);
+		if (length < 0 || (size_t)length >= sizeof(default_socket)) {
+			swaybg_log(LOG_ERROR, "Default socket path is too long");
+			return 1;
+		}
+		state.socket_path = default_socket;
+	}
 
 	// Identify distinct image paths which will need to be loaded
 	struct swaybg_image *image;

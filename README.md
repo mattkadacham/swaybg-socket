@@ -8,30 +8,37 @@ See the man page, `swaybg(1)`, for instructions on using swaybg.
 
 ## Changing the image at runtime
 
-Start swaybg with a Unix socket:
+Start swaybg. It listens on `$XDG_RUNTIME_DIR/swaybg.sock` by default:
 
-    swaybg --socket "$XDG_RUNTIME_DIR/swaybg.sock" --image /path/to/image.jpg
+    swaybg --image /path/to/image.jpg
+
+With no appearance options, swaybg starts with a black background so it can be
+controlled entirely through `swaybgctl`:
+
+    swaybg
+
+Use `--socket <path>` to listen elsewhere or `--no-socket` to disable IPC.
 
 Change the image immediately without caching it:
 
-    swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" /path/to/new-image.jpg
+    swaybgctl /path/to/new-image.jpg
 
 Cache decoded images under reusable IDs:
 
-    swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" cache forest /path/to/forest.jpg
-    swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" cache city /path/to/city.jpg
+    swaybgctl cache forest /path/to/forest.jpg
+    swaybgctl cache city /path/to/city.jpg
 
 Switch images without decoding them again:
 
-    swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" show forest
-    swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" next
-    swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" prev
+    swaybgctl show forest
+    swaybgctl next
+    swaybgctl prev
 
 Inspect or release cached images:
 
-    swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" status
-    swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" drop city
-    swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" clear
+    swaybgctl status
+    swaybgctl drop city
+    swaybgctl clear
 
 `show` applies the image to all configured outputs without recreating their
 Wayland surfaces. Each output keeps its current scaling mode. A color-only
@@ -41,6 +48,9 @@ reloads its path if an output later needs to be redrawn.
 
 `next` and `prev` follow cache insertion order and wrap at either end. If an
 uncached image is active, they start at the first or last cached image.
+
+`swaybgctl` connects to the same default socket. Use `--socket <path>` to
+connect to a swaybg instance listening elsewhere.
 
 ## Release Signatures
 

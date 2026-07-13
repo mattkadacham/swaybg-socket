@@ -30,36 +30,41 @@ these options.
 	Default is _stretch_. Use the additional mode _solid\_color_ to display
 	only the background color, even if a background image is specified.
 
+*--no-socket*
+	Disable IPC instead of listening on the default socket.
+
 *-o, --output* <name>
 	Select an output to configure. Subsequent appearance options will only
 	apply to this output. The special value _\*_ selects all outputs.
 
 *-s, --socket* <path>
-	Listen on a Unix socket for runtime cache and image-change commands from
-	*swaybgctl*.
+	Listen at _path_ for runtime cache and image-change commands from
+	*swaybgctl*. The default is _$XDG_RUNTIME_DIR/swaybg.sock_.
 
 *-v, --version*
 	Show the version number and quit.
 
 # RUNTIME IMAGE CHANGES
 
-Start swaybg with an IPC socket:
+Start swaybg. IPC is enabled by default:
 
 ```
-swaybg --socket "$XDG_RUNTIME_DIR/swaybg.sock" --image /path/to/image.jpg
+swaybg --image /path/to/image.jpg
 ```
+
+With no image or color, swaybg displays black until it receives a command.
 
 Cache and show images from another process:
 
 ```
-swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" cache forest /path/to/forest.jpg
-swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" show forest
+swaybgctl cache forest /path/to/forest.jpg
+swaybgctl show forest
 ```
 
 An image path can also be displayed immediately without caching it:
 
 ```
-swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" /path/to/image.jpg
+swaybgctl /path/to/image.jpg
 ```
 
 Available commands are:
@@ -95,6 +100,9 @@ Available commands are:
 
 Image changes preserve each output's scaling mode. Color-only outputs switch
 to _stretch_ mode when an image is shown.
+
+*swaybgctl* connects to _$XDG_RUNTIME_DIR/swaybg.sock_ by default. Pass
+_--socket <path>_ before the command to use a different socket.
 
 # AUTHORS
 
