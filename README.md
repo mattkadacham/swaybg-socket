@@ -24,6 +24,8 @@ Cache decoded images under reusable IDs:
 Switch images without decoding them again:
 
     swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" show forest
+    swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" next
+    swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" prev
 
 Inspect or release cached images:
 
@@ -36,6 +38,9 @@ Wayland surfaces. Each output keeps its current scaling mode. A color-only
 output switches to `stretch` mode when it receives an image. Dropping or
 clearing the active cache entry leaves the committed wallpaper visible; swaybg
 reloads its path if an output later needs to be redrawn.
+
+`next` and `prev` follow cache insertion order and wrap at either end. If an
+uncached image is active, they start at the first or last cached image.
 
 ## Release Signatures
 

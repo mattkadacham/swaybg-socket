@@ -12,6 +12,8 @@ static void usage(FILE *stream) {
 		"       swaybgctl <socket-path> set <image-path>\n"
 		"       swaybgctl <socket-path> cache <id> <image-path>\n"
 		"       swaybgctl <socket-path> show <id>\n"
+		"       swaybgctl <socket-path> next\n"
+		"       swaybgctl <socket-path> prev\n"
 		"       swaybgctl <socket-path> drop <id>\n"
 		"       swaybgctl <socket-path> clear\n"
 		"       swaybgctl <socket-path> status\n");
@@ -29,6 +31,7 @@ int main(int argc, char **argv) {
 	int command_argc = argc - 2;
 	bool known_command = strcmp(argv[2], "set") == 0 ||
 		strcmp(argv[2], "cache") == 0 || strcmp(argv[2], "show") == 0 ||
+		strcmp(argv[2], "next") == 0 || strcmp(argv[2], "prev") == 0 ||
 		strcmp(argv[2], "drop") == 0 || strcmp(argv[2], "clear") == 0 ||
 		strcmp(argv[2], "status") == 0;
 
@@ -72,7 +75,8 @@ int main(int argc, char **argv) {
 			usage(stderr);
 			return EXIT_FAILURE;
 		}
-	} else if (strcmp(argv[2], "clear") == 0 ||
+	} else if (strcmp(argv[2], "next") == 0 ||
+			strcmp(argv[2], "prev") == 0 || strcmp(argv[2], "clear") == 0 ||
 			strcmp(argv[2], "status") == 0) {
 		if (argc != 3) {
 			usage(stderr);

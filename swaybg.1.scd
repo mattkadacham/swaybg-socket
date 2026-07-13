@@ -75,6 +75,14 @@ Available commands are:
 *show* <id>
 	Display a cached image on all configured outputs without decoding it again.
 
+*next*
+	Show the next cached image in insertion order, wrapping to the first entry.
+	If no cache entry is active, show the first entry.
+
+*prev*
+	Show the previous cached image in insertion order, wrapping to the last
+	entry. If no cache entry is active, show the last entry.
+
 *drop* <id>
 	Release one cached image. If it is currently displayed, the committed
 	wallpaper remains visible and can be reloaded from disk when required.

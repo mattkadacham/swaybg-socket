@@ -269,6 +269,42 @@ static struct swaybg_cache_entry *find_cache_entry(
 	return NULL;
 }
 
+static struct swaybg_cache_entry *relative_cache_entry(
+		struct swaybg_state *state, bool forward) {
+	if (wl_list_empty(&state->cache)) {
+		return NULL;
+	}
+
+	struct swaybg_cache_entry *entry;
+	struct swaybg_cache_entry *first = NULL;
+	struct swaybg_cache_entry *last = NULL;
+	wl_list_for_each(entry, &state->cache, link) {
+		if (!first) {
+			first = entry;
+		}
+		last = entry;
+	}
+	if (!state->active_cache) {
+		return forward ? first : last;
+	}
+
+	struct swaybg_cache_entry *previous = NULL;
+	bool return_next = false;
+	wl_list_for_each(entry, &state->cache, link) {
+		if (return_next) {
+			return entry;
+		}
+		if (entry == state->active_cache) {
+			if (!forward) {
+				return previous ? previous : last;
+			}
+			return_next = true;
+		}
+		previous = entry;
+	}
+	return first;
+}
+
 static bool valid_cache_id(const char *id) {
 	size_t length = strlen(id);
 	if (length == 0 || length > 128) {
@@ -413,6 +449,28 @@ static void handle_ipc_command(struct swaybg_state *state,
 		}
 		char response[160];
 		snprintf(response, sizeof(response), "Showing %s", id);
+		ipc_reply(message, true, response);
+		return;
+	}
+
+	if (strcmp(command, "next") == 0 || strcmp(command, "prev") == 0) {
+		if (!ipc_has_args(message, 1)) {
+			ipc_reply(message, false,
+				strcmp(command, "next") == 0 ? "Usage: next" : "Usage: prev");
+			return;
+		}
+		struct swaybg_cache_entry *entry = relative_cache_entry(state,
+			strcmp(command, "next") == 0);
+		if (!entry) {
+			ipc_reply(message, false, "Cache is empty");
+			return;
+		}
+		if (!show_surface(state, entry->path, entry->surface, entry)) {
+			ipc_reply(message, false, "Unable to select cached image");
+			return;
+		}
+		char response[160];
+		snprintf(response, sizeof(response), "Showing %s", entry->id);
 		ipc_reply(message, true, response);
 		return;
 	}
