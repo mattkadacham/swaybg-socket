@@ -22,11 +22,12 @@ Use `--socket <path>` to listen elsewhere or `--no-socket` to disable IPC.
 Change the image immediately without caching it:
 
     swaybgctl /path/to/new-image.jpg
+    swaybgctl --mode fill /path/to/new-image.jpg
 
 Cache decoded images under reusable IDs:
 
-    swaybgctl cache forest /path/to/forest.jpg
-    swaybgctl cache city /path/to/city.jpg
+    swaybgctl --mode fill cache forest /path/to/forest.jpg
+    swaybgctl --mode fit cache city /path/to/city.jpg
 
 Switch images without decoding them again:
 
@@ -40,11 +41,17 @@ Inspect or release cached images:
     swaybgctl drop city
     swaybgctl clear
 
-`show` applies the image to all configured outputs without recreating their
-Wayland surfaces. Each output keeps its current scaling mode. A color-only
-output switches to `stretch` mode when it receives an image. Dropping or
-clearing the active cache entry leaves the committed wallpaper visible; swaybg
-reloads its path if an output later needs to be redrawn.
+`--mode` accepts the same `stretch`, `fill`, `fit`, `center`, and `tile` values
+as swaybg. An uncached image uses the supplied mode immediately. A cached image
+remembers its mode, and `show`, `next`, and `prev` apply it whenever that entry
+is selected. If no mode is supplied, each output keeps its current scaling
+mode; a color-only output switches to `stretch` when it receives an image.
+
+The cache retains the decoded image, so selecting it does not read or decode
+the file again. Scaling and cropping are still calculated when it is shown
+because those depend on each output's current dimensions and scale. Dropping
+or clearing the active cache entry leaves the committed wallpaper visible;
+swaybg reloads its path if an output later needs to be redrawn.
 
 `next` and `prev` follow cache insertion order and wrap at either end. If an
 uncached image is active, they start at the first or last cached image.

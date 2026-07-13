@@ -57,7 +57,7 @@ With no image or color, swaybg displays black until it receives a command.
 Cache and show images from another process:
 
 ```
-swaybgctl cache forest /path/to/forest.jpg
+swaybgctl --mode fill cache forest /path/to/forest.jpg
 swaybgctl show forest
 ```
 
@@ -65,6 +65,7 @@ An image path can also be displayed immediately without caching it:
 
 ```
 swaybgctl /path/to/image.jpg
+swaybgctl --mode fit /path/to/image.jpg
 ```
 
 Available commands are:
@@ -98,8 +99,14 @@ Available commands are:
 *status*
 	List cached IDs, dimensions, paths, and the active cache entry.
 
-Image changes preserve each output's scaling mode. Color-only outputs switch
-to _stretch_ mode when an image is shown.
+Pass _-m, --mode_ to an uncached image or the _cache_ command to use one of
+_stretch_, _fill_, _fit_, _center_, or _tile_. A cached image remembers its
+mode, which is applied by _show_, _next_, and _prev_. Without _--mode_, image
+changes preserve each output's scaling mode. Color-only outputs switch to
+_stretch_ mode when an image is shown.
+
+Caching retains the decoded image. Scaling and cropping still occur when the
+image is shown because they depend on each output's dimensions and scale.
 
 *swaybgctl* connects to _$XDG_RUNTIME_DIR/swaybg.sock_ by default. Pass
 _--socket <path>_ before the command to use a different socket.

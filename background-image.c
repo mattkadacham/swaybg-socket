@@ -21,6 +21,26 @@ enum background_mode parse_background_mode(const char *mode) {
 	return BACKGROUND_MODE_INVALID;
 }
 
+const char *background_mode_to_string(enum background_mode mode) {
+	switch (mode) {
+	case BACKGROUND_MODE_STRETCH:
+		return "stretch";
+	case BACKGROUND_MODE_FILL:
+		return "fill";
+	case BACKGROUND_MODE_FIT:
+		return "fit";
+	case BACKGROUND_MODE_CENTER:
+		return "center";
+	case BACKGROUND_MODE_TILE:
+		return "tile";
+	case BACKGROUND_MODE_SOLID_COLOR:
+		return "solid_color";
+	case BACKGROUND_MODE_INVALID:
+		return "preserve";
+	}
+	return "invalid";
+}
+
 cairo_surface_t *load_background_image(const char *path) {
 	cairo_surface_t *image;
 #if HAVE_GDK_PIXBUF

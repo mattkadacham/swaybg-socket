@@ -83,6 +83,7 @@ struct swaybg_cache_entry {
 	char *id;
 	char *path;
 	cairo_surface_t *surface;
+	enum background_mode mode;
 };
 
 struct swaybg_output_config {
@@ -330,7 +331,8 @@ static void destroy_cache_entry(struct swaybg_cache_entry *entry) {
 }
 
 static bool show_surface(struct swaybg_state *state, const char *image_path,
-		cairo_surface_t *surface, struct swaybg_cache_entry *active_cache) {
+		cairo_surface_t *surface, struct swaybg_cache_entry *active_cache,
+		enum background_mode mode) {
 	char *path = strdup(image_path);
 	if (!path) {
 		return false;
@@ -341,7 +343,9 @@ static bool show_surface(struct swaybg_state *state, const char *image_path,
 
 	struct swaybg_output_config *config;
 	wl_list_for_each(config, &state->configs, link) {
-		if (config->mode == BACKGROUND_MODE_SOLID_COLOR) {
+		if (mode != BACKGROUND_MODE_INVALID) {
+			config->mode = mode;
+		} else if (config->mode == BACKGROUND_MODE_SOLID_COLOR) {
 			config->mode = BACKGROUND_MODE_STRETCH;
 		}
 	}
@@ -373,12 +377,20 @@ static void handle_ipc_command(struct swaybg_state *state,
 	}
 
 	if (strcmp(command, "cache") == 0) {
-		if (!ipc_has_args(message, 3)) {
-			ipc_reply(message, false, "Usage: cache <id> <path>");
+		if (!ipc_has_args(message, 3) && !ipc_has_args(message, 4)) {
+			ipc_reply(message, false, "Usage: cache <id> <path> [mode]");
 			return;
 		}
 		const char *id = ipc_message_arg(message, 1);
 		const char *path = ipc_message_arg(message, 2);
+		const char *mode_name = ipc_message_arg(message, 3);
+		enum background_mode mode = mode_name
+			? parse_background_mode(mode_name)
+			: BACKGROUND_MODE_INVALID;
+		if (mode_name && mode == BACKGROUND_MODE_INVALID) {
+			ipc_reply(message, false, "Invalid background mode");
+			return;
+		}
 		if (!valid_cache_id(id)) {
 			ipc_reply(message, false,
 				"Cache ID must use 1-128 letters, numbers, '.', '-', or '_'");
@@ -406,6 +418,7 @@ static void handle_ipc_command(struct swaybg_state *state,
 			return;
 		}
 		entry->surface = surface;
+		entry->mode = mode;
 		wl_list_insert(state->cache.prev, &entry->link);
 		char response[160];
 		snprintf(response, sizeof(response), "Cached %s", id);
@@ -414,17 +427,25 @@ static void handle_ipc_command(struct swaybg_state *state,
 	}
 
 	if (strcmp(command, "set") == 0) {
-		if (!ipc_has_args(message, 2)) {
-			ipc_reply(message, false, "Usage: set <path>");
+		if (!ipc_has_args(message, 2) && !ipc_has_args(message, 3)) {
+			ipc_reply(message, false, "Usage: set <path> [mode]");
 			return;
 		}
 		const char *path = ipc_message_arg(message, 1);
+		const char *mode_name = ipc_message_arg(message, 2);
+		enum background_mode mode = mode_name
+			? parse_background_mode(mode_name)
+			: BACKGROUND_MODE_INVALID;
+		if (mode_name && mode == BACKGROUND_MODE_INVALID) {
+			ipc_reply(message, false, "Invalid background mode");
+			return;
+		}
 		cairo_surface_t *surface = load_background_image(path);
 		if (!surface) {
 			ipc_reply(message, false, "Unable to load image");
 			return;
 		}
-		bool shown = show_surface(state, path, surface, NULL);
+		bool shown = show_surface(state, path, surface, NULL, mode);
 		cairo_surface_destroy(surface);
 		if (!shown) {
 			ipc_reply(message, false, "Unable to display image");
@@ -445,7 +466,8 @@ static void handle_ipc_command(struct swaybg_state *state,
 			ipc_reply(message, false, "Cache ID not found");
 			return;
 		}
-		if (!show_surface(state, entry->path, entry->surface, entry)) {
+		if (!show_surface(state, entry->path, entry->surface, entry,
+				entry->mode)) {
 			ipc_reply(message, false, "Unable to select cached image");
 			return;
 		}
@@ -467,7 +489,8 @@ static void handle_ipc_command(struct swaybg_state *state,
 			ipc_reply(message, false, "Cache is empty");
 			return;
 		}
-		if (!show_surface(state, entry->path, entry->surface, entry)) {
+		if (!show_surface(state, entry->path, entry->surface, entry,
+				entry->mode)) {
 			ipc_reply(message, false, "Unable to select cached image");
 			return;
 		}
@@ -541,11 +564,12 @@ static void handle_ipc_command(struct swaybg_state *state,
 			fprintf(stream, "cache:");
 			struct swaybg_cache_entry *entry;
 			wl_list_for_each(entry, &state->cache, link) {
-				fprintf(stream, "\n%c %s %dx%d %s",
+				fprintf(stream, "\n%c %s %dx%d mode=%s %s",
 					entry == state->active_cache ? '*' : '-',
 					entry->id,
 					cairo_image_surface_get_width(entry->surface),
 					cairo_image_surface_get_height(entry->surface),
+					background_mode_to_string(entry->mode),
 					entry->path);
 			}
 		}

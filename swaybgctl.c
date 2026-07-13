@@ -11,9 +11,9 @@
 
 static void usage(FILE *stream) {
 	fprintf(stream,
-		"Usage: swaybgctl [--socket <path>] <image-path>\n"
-		"       swaybgctl [--socket <path>] set <image-path>\n"
-		"       swaybgctl [--socket <path>] cache <id> <image-path>\n"
+		"Usage: swaybgctl [--socket <path>] [-m <mode>] <image-path>\n"
+		"       swaybgctl [--socket <path>] [-m <mode>] set <image-path>\n"
+		"       swaybgctl [--socket <path>] [-m <mode>] cache <id> <image-path>\n"
 		"       swaybgctl [--socket <path>] show <id>\n"
 		"       swaybgctl [--socket <path>] next\n"
 		"       swaybgctl [--socket <path>] prev\n"
@@ -34,13 +34,15 @@ static bool is_command(const char *value) {
 int main(int argc, char **argv) {
 	static struct option long_options[] = {
 		{ "help", no_argument, NULL, 'h' },
+		{ "mode", required_argument, NULL, 'm' },
 		{ "socket", required_argument, NULL, 's' },
 		{ 0, 0, 0, 0 },
 	};
 
 	const char *socket_path = NULL;
+	const char *mode = NULL;
 	int option;
-	while ((option = getopt_long(argc, argv, "hs:", long_options, NULL)) != -1) {
+	while ((option = getopt_long(argc, argv, "hm:s:", long_options, NULL)) != -1) {
 		switch (option) {
 		case 's':
 			socket_path = optarg;
@@ -48,6 +50,9 @@ int main(int argc, char **argv) {
 		case 'h':
 			usage(stdout);
 			return EXIT_SUCCESS;
+		case 'm':
+			mode = optarg;
+			break;
 		default:
 			usage(stderr);
 			return EXIT_FAILURE;
@@ -85,6 +90,12 @@ int main(int argc, char **argv) {
 	char **command_args = argv + command_index;
 	const char *command = command_args[0];
 	bool known_command = is_command(command);
+	bool accepts_mode = !known_command || strcmp(command, "set") == 0 ||
+		strcmp(command, "cache") == 0;
+	if (mode && !accepts_mode) {
+		fprintf(stderr, "--mode can only be used with an image, set, or cache\n");
+		return EXIT_FAILURE;
+	}
 	char *resolved_path = NULL;
 	char *direct_args[2] = { "set", NULL };
 	if (command_argc == 1 && !known_command) {
@@ -138,6 +149,15 @@ int main(int argc, char **argv) {
 		usage(stderr);
 		return EXIT_FAILURE;
 	}
+
+	char *request_args[4];
+	for (int i = 0; i < command_argc; ++i) {
+		request_args[i] = command_args[i];
+	}
+	if (mode) {
+		request_args[command_argc++] = (char *)mode;
+	}
+	command_args = request_args;
 
 	char *response = NULL;
 	int result = ipc_send_command(socket_path, command_argc, command_args,

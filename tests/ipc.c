@@ -16,9 +16,11 @@ int main(void) {
 
 	pid_t child = fork();
 	if (child == 0) {
-		char *args[] = { "cache", "forest", "/tmp/image with spaces.png" };
+		char *args[] = {
+			"cache", "forest", "/tmp/image with spaces.png", "fill",
+		};
 		char *response = NULL;
-		int result = ipc_send_command(socket_path, 3, args, &response);
+		int result = ipc_send_command(socket_path, 4, args, &response);
 		bool failed = result != 0 || !response ||
 			strcmp(response, "accepted") != 0;
 		free(response);
@@ -36,7 +38,8 @@ int main(void) {
 			strcmp(ipc_message_arg(&message, 1), "forest") != 0 ||
 			strcmp(ipc_message_arg(&message, 2),
 				"/tmp/image with spaces.png") != 0 ||
-			ipc_message_arg(&message, 3) != NULL;
+			strcmp(ipc_message_arg(&message, 3), "fill") != 0 ||
+			ipc_message_arg(&message, 4) != NULL;
 		ipc_reply(&message, !failed, failed ? "rejected" : "accepted");
 	}
 
