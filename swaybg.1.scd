@@ -34,8 +34,30 @@ these options.
 	Select an output to configure. Subsequent appearance options will only
 	apply to this output. The special value _\*_ selects all outputs.
 
+*-s, --socket* <path>
+	Listen on a Unix socket for runtime image changes. Send an image with
+	*swaybgctl* <socket-path> <image-path>. The image is applied to all
+	configured outputs without recreating their Wayland surfaces.
+
 *-v, --version*
 	Show the version number and quit.
+
+# RUNTIME IMAGE CHANGES
+
+Start swaybg with an IPC socket:
+
+```
+swaybg --socket "$XDG_RUNTIME_DIR/swaybg.sock" --image /path/to/image.jpg
+```
+
+Change the image from another process:
+
+```
+swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" /path/to/new-image.jpg
+```
+
+The replacement applies to all configured outputs and preserves their image
+scaling modes. Color-only outputs switch to _stretch_ mode.
 
 # AUTHORS
 

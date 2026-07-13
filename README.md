@@ -6,6 +6,20 @@ any Wayland compositor which implements the wlr-layer-shell protocol and
 
 See the man page, `swaybg(1)`, for instructions on using swaybg.
 
+## Changing the image at runtime
+
+Start swaybg with a Unix socket:
+
+    swaybg --socket "$XDG_RUNTIME_DIR/swaybg.sock" --image /path/to/image.jpg
+
+Then replace the image without recreating the Wayland surfaces:
+
+    swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" /path/to/new-image.jpg
+
+The new image is applied to all configured outputs. Each output keeps its
+current scaling mode. A color-only output switches to `stretch` mode when it
+receives an image.
+
 ## Release Signatures
 
 Releases are signed with [E88F5E48](https://keys.openpgp.org/search?q=34FF9526CFEF0E97A340E2E40FDE7BE0E88F5E48)

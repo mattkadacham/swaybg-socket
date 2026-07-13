@@ -94,6 +94,7 @@ executable(
 		'cairo.c',
 		'log.c',
 		'main.c',
+		'ipc.c',
 		'pool-buffer.c',
 		protos_src,
 	],
@@ -105,6 +106,16 @@ executable(
 		wayland_client,
 	],
 	install: true
+)
+
+executable(
+	'swaybgctl',
+	[
+		'ipc.c',
+		'swaybgctl.c',
+	],
+	include_directories: 'include',
+	install: true,
 )
 
 if scdoc.found()

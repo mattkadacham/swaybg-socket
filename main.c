@@ -1,6 +1,9 @@
 #include <assert.h>
 #include <ctype.h>
 #include <getopt.h>
+#include <errno.h>
+#include <poll.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,12 +12,19 @@
 #include <wayland-client.h>
 #include "background-image.h"
 #include "cairo_util.h"
+#include "ipc.h"
 #include "log.h"
 #include "pool-buffer.h"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 #include "viewporter-client-protocol.h"
 #include "single-pixel-buffer-v1-client-protocol.h"
 #include "fractional-scale-v1-client-protocol.h"
+
+static volatile sig_atomic_t keep_running = 1;
+
+static void handle_signal(int signal) {
+	keep_running = 0;
+}
 
 /*
  * If `color` is a hexadecimal string of the form 'rrggbb' or '#rrggbb',
@@ -52,12 +62,14 @@ struct swaybg_state {
 	struct wl_list configs;  // struct swaybg_output_config::link
 	struct wl_list outputs;  // struct swaybg_output::link
 	struct wl_list images;   // struct swaybg_image::link
+	const char *socket_path;
+	int socket_fd;
 	bool run_display;
 };
 
 struct swaybg_image {
 	struct wl_list link;
-	const char *path;
+	char *path;
 	bool load_required;
 };
 
@@ -89,7 +101,7 @@ struct swaybg_output {
 	uint32_t pref_fract_scale;
 
 	uint32_t configure_serial;
-	bool dirty, needs_ack;
+	bool dirty, needs_ack, force_redraw;
 	// dimensions of the wl_buffer attached to the wl_surface
 	uint32_t buffer_width, buffer_height;
 
@@ -165,9 +177,9 @@ static void render_frame(struct swaybg_output *output, cairo_surface_t *surface)
 	uint32_t buffer_width, buffer_height;
 	get_buffer_size(output, &buffer_width, &buffer_height);
 
-	// Attach a new buffer if the desired size has changed
+	// Attach a new buffer if the desired size or contents have changed
 	struct wl_buffer *buf = NULL;
-	if (buffer_width != output->buffer_width ||
+	if (output->force_redraw || buffer_width != output->buffer_width ||
 			buffer_height != output->buffer_height) {
 		buf = draw_buffer(output, surface,
 			buffer_width, buffer_height);
@@ -181,6 +193,7 @@ static void render_frame(struct swaybg_output *output, cairo_surface_t *surface)
 
 		output->buffer_width = buffer_width;
 		output->buffer_height = buffer_height;
+		output->force_redraw = false;
 	}
 
 	if (output->viewport) {
@@ -199,6 +212,7 @@ static void destroy_swaybg_image(struct swaybg_image *image) {
 		return;
 	}
 	wl_list_remove(&image->link);
+	free(image->path);
 	free(image);
 }
 
@@ -232,6 +246,103 @@ static void destroy_swaybg_output(struct swaybg_output *output) {
 	free(output->name);
 	free(output->identifier);
 	free(output);
+}
+
+static bool image_is_used(struct swaybg_state *state,
+		struct swaybg_image *image) {
+	struct swaybg_output_config *config;
+	wl_list_for_each(config, &state->configs, link) {
+		if (config->image == image) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static void apply_ipc_image(struct swaybg_state *state, char *path) {
+	cairo_surface_t *surface = load_background_image(path);
+	if (!surface) {
+		free(path);
+		return;
+	}
+
+	struct swaybg_image *image = calloc(1, sizeof(*image));
+	if (!image) {
+		swaybg_log(LOG_ERROR, "Unable to allocate IPC image");
+		cairo_surface_destroy(surface);
+		free(path);
+		return;
+	}
+	image->path = path;
+	wl_list_insert(&state->images, &image->link);
+
+	struct swaybg_output_config *config;
+	wl_list_for_each(config, &state->configs, link) {
+		config->image = image;
+		config->image_path = image->path;
+		if (config->mode == BACKGROUND_MODE_SOLID_COLOR) {
+			config->mode = BACKGROUND_MODE_STRETCH;
+		}
+	}
+
+	struct swaybg_output *output;
+	wl_list_for_each(output, &state->outputs, link) {
+		if (!output->config || !output->surface ||
+				output->width == 0 || output->height == 0) {
+			continue;
+		}
+		output->dirty = false;
+		output->force_redraw = true;
+		render_frame(output, surface);
+	}
+	cairo_surface_destroy(surface);
+
+	struct swaybg_image *old_image, *tmp;
+	wl_list_for_each_safe(old_image, tmp, &state->images, link) {
+		if (old_image != image && !image_is_used(state, old_image)) {
+			destroy_swaybg_image(old_image);
+		}
+	}
+	swaybg_log(LOG_INFO, "Changed background image to %s", path);
+}
+
+static int dispatch_next_event(struct swaybg_state *state) {
+	if (state->socket_fd == -1) {
+		return wl_display_dispatch(state->display);
+	}
+
+	bool needs_flush = false;
+	if (wl_display_flush(state->display) == -1) {
+		if (errno != EAGAIN) {
+			return -1;
+		}
+		needs_flush = true;
+	}
+
+	struct pollfd fds[] = {
+		{
+			.fd = wl_display_get_fd(state->display),
+			.events = POLLIN | (needs_flush ? POLLOUT : 0),
+		},
+		{ .fd = state->socket_fd, .events = POLLIN },
+	};
+	int ready = poll(fds, 2, -1);
+	if (ready == -1) {
+		return errno == EINTR ? 0 : -1;
+	}
+	if (fds[0].revents & (POLLERR | POLLHUP | POLLNVAL)) {
+		return -1;
+	}
+	if (fds[1].revents & POLLIN) {
+		char *path = ipc_receive_path(state->socket_fd);
+		if (path) {
+			apply_ipc_image(state, path);
+		}
+	}
+	if (fds[0].revents & POLLIN) {
+		return wl_display_dispatch(state->display);
+	}
+	return 0;
 }
 
 static void layer_surface_configure(void *data,
@@ -481,6 +592,7 @@ static void parse_command_line(int argc, char **argv,
 		{"image", required_argument, NULL, 'i'},
 		{"mode", required_argument, NULL, 'm'},
 		{"output", required_argument, NULL, 'o'},
+		{"socket", required_argument, NULL, 's'},
 		{"version", no_argument, NULL, 'v'},
 		{0, 0, 0, 0}
 	};
@@ -493,6 +605,7 @@ static void parse_command_line(int argc, char **argv,
 		"  -i, --image <path>     Set the image to display.\n"
 		"  -m, --mode <mode>      Set the mode to use for the image.\n"
 		"  -o, --output <name>    Set the output to operate on or * for all.\n"
+		"  -s, --socket <path>    Listen for image changes on a Unix socket.\n"
 		"  -v, --version          Show the version number and quit.\n"
 		"\n"
 		"Background Modes:\n"
@@ -506,7 +619,7 @@ static void parse_command_line(int argc, char **argv,
 	int c;
 	while (1) {
 		int option_index = 0;
-		c = getopt_long(argc, argv, "c:hi:m:o:v", long_options, &option_index);
+		c = getopt_long(argc, argv, "c:hi:m:o:s:v", long_options, &option_index);
 		if (c == -1) {
 			break;
 		}
@@ -536,6 +649,9 @@ static void parse_command_line(int argc, char **argv,
 			config->output = strdup(optarg);
 			config->mode = BACKGROUND_MODE_INVALID;
 			wl_list_init(&config->link);  // init for safe removal
+			break;
+		case 's':  // socket
+			state->socket_path = optarg;
 			break;
 		case 'v':  // version
 			fprintf(stdout, "swaybg version " SWAYBG_VERSION "\n");
@@ -581,8 +697,13 @@ static void parse_command_line(int argc, char **argv,
 
 int main(int argc, char **argv) {
 	swaybg_log_init(LOG_DEBUG);
+	struct sigaction signal_action = { .sa_handler = handle_signal };
+	sigemptyset(&signal_action.sa_mask);
+	sigaction(SIGINT, &signal_action, NULL);
+	sigaction(SIGTERM, &signal_action, NULL);
 
 	struct swaybg_state state = {0};
+	state.socket_fd = -1;
 	wl_list_init(&state.configs);
 	wl_list_init(&state.outputs);
 	wl_list_init(&state.images);
@@ -599,6 +720,7 @@ int main(int argc, char **argv) {
 		wl_list_for_each(image, &state.images, link) {
 			if (strcmp(image->path, config->image_path) == 0) {
 				config->image = image;
+				config->image_path = image->path;
 				break;
 			}
 		}
@@ -606,9 +728,17 @@ int main(int argc, char **argv) {
 			continue;
 		}
 		image = calloc(1, sizeof(struct swaybg_image));
-		image->path = config->image_path;
+		image->path = strdup(config->image_path);
 		wl_list_insert(&state.images, &image->link);
 		config->image = image;
+		config->image_path = image->path;
+	}
+
+	if (state.socket_path) {
+		state.socket_fd = ipc_open_server(state.socket_path);
+		if (state.socket_fd == -1) {
+			return 1;
+		}
 	}
 
 	state.display = wl_display_connect(NULL);
@@ -616,6 +746,7 @@ int main(int argc, char **argv) {
 		swaybg_log(LOG_ERROR, "Unable to connect to the compositor. "
 				"If your compositor is running, check or set the "
 				"WAYLAND_DISPLAY environment variable.");
+		ipc_close_server(state.socket_fd, state.socket_path);
 		return 1;
 	}
 
@@ -623,16 +754,18 @@ int main(int argc, char **argv) {
 	wl_registry_add_listener(registry, &registry_listener, &state);
 	if (wl_display_roundtrip(state.display) < 0) {
 		swaybg_log(LOG_ERROR, "wl_display_roundtrip failed");
+		ipc_close_server(state.socket_fd, state.socket_path);
 		return 1;
 	}
 	if (state.compositor == NULL || state.shm == NULL ||
 			state.layer_shell == NULL) {
 		swaybg_log(LOG_ERROR, "Missing a required Wayland interface");
+		ipc_close_server(state.socket_fd, state.socket_path);
 		return 1;
 	}
 
 	state.run_display = true;
-	while (wl_display_dispatch(state.display) != -1 && state.run_display) {
+	while (dispatch_next_event(&state) != -1 && state.run_display && keep_running) {
 		// Send acks, and determine which images need to be loaded
 		struct swaybg_output *output;
 		wl_list_for_each(output, &state.outputs, link) {
@@ -700,6 +833,8 @@ int main(int argc, char **argv) {
 	wl_list_for_each_safe(image, tmp_image, &state.images, link) {
 		destroy_swaybg_image(image);
 	}
+
+	ipc_close_server(state.socket_fd, state.socket_path);
 
 	return 0;
 }
