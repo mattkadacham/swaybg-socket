@@ -62,6 +62,9 @@ struct swaybg_state {
 	struct wl_list configs;  // struct swaybg_output_config::link
 	struct wl_list outputs;  // struct swaybg_output::link
 	struct wl_list images;   // struct swaybg_image::link
+	struct wl_list cache;    // struct swaybg_cache_entry::link
+	struct swaybg_cache_entry *active_cache;
+	char *current_path;
 	const char *socket_path;
 	int socket_fd;
 	bool run_display;
@@ -71,6 +74,13 @@ struct swaybg_image {
 	struct wl_list link;
 	char *path;
 	bool load_required;
+};
+
+struct swaybg_cache_entry {
+	struct wl_list link;
+	char *id;
+	char *path;
+	cairo_surface_t *surface;
 };
 
 struct swaybg_output_config {
@@ -248,38 +258,51 @@ static void destroy_swaybg_output(struct swaybg_output *output) {
 	free(output);
 }
 
-static bool image_is_used(struct swaybg_state *state,
-		struct swaybg_image *image) {
-	struct swaybg_output_config *config;
-	wl_list_for_each(config, &state->configs, link) {
-		if (config->image == image) {
-			return true;
+static struct swaybg_cache_entry *find_cache_entry(
+		struct swaybg_state *state, const char *id) {
+	struct swaybg_cache_entry *entry;
+	wl_list_for_each(entry, &state->cache, link) {
+		if (strcmp(entry->id, id) == 0) {
+			return entry;
 		}
 	}
-	return false;
+	return NULL;
 }
 
-static void apply_ipc_image(struct swaybg_state *state, char *path) {
-	cairo_surface_t *surface = load_background_image(path);
-	if (!surface) {
-		free(path);
-		return;
+static bool valid_cache_id(const char *id) {
+	size_t length = strlen(id);
+	if (length == 0 || length > 128) {
+		return false;
 	}
+	for (size_t i = 0; i < length; ++i) {
+		unsigned char c = id[i];
+		if (!isalnum(c) && c != '-' && c != '_' && c != '.') {
+			return false;
+		}
+	}
+	return true;
+}
 
-	struct swaybg_image *image = calloc(1, sizeof(*image));
-	if (!image) {
-		swaybg_log(LOG_ERROR, "Unable to allocate IPC image");
-		cairo_surface_destroy(surface);
-		free(path);
-		return;
+static void destroy_cache_entry(struct swaybg_cache_entry *entry) {
+	wl_list_remove(&entry->link);
+	cairo_surface_destroy(entry->surface);
+	free(entry->id);
+	free(entry->path);
+	free(entry);
+}
+
+static bool show_surface(struct swaybg_state *state, const char *image_path,
+		cairo_surface_t *surface, struct swaybg_cache_entry *active_cache) {
+	char *path = strdup(image_path);
+	if (!path) {
+		return false;
 	}
-	image->path = path;
-	wl_list_insert(&state->images, &image->link);
+	free(state->current_path);
+	state->current_path = path;
+	state->active_cache = active_cache;
 
 	struct swaybg_output_config *config;
 	wl_list_for_each(config, &state->configs, link) {
-		config->image = image;
-		config->image_path = image->path;
 		if (config->mode == BACKGROUND_MODE_SOLID_COLOR) {
 			config->mode = BACKGROUND_MODE_STRETCH;
 		}
@@ -295,15 +318,184 @@ static void apply_ipc_image(struct swaybg_state *state, char *path) {
 		output->force_redraw = true;
 		render_frame(output, surface);
 	}
-	cairo_surface_destroy(surface);
+	return true;
+}
 
-	struct swaybg_image *old_image, *tmp;
-	wl_list_for_each_safe(old_image, tmp, &state->images, link) {
-		if (old_image != image && !image_is_used(state, old_image)) {
-			destroy_swaybg_image(old_image);
-		}
+static bool ipc_has_args(const struct ipc_message *message, size_t count) {
+	return count > 0 && ipc_message_arg(message, count - 1) &&
+		!ipc_message_arg(message, count);
+}
+
+static void handle_ipc_command(struct swaybg_state *state,
+		struct ipc_message *message) {
+	const char *command = ipc_message_arg(message, 0);
+	if (!command) {
+		ipc_reply(message, false, "Malformed command");
+		return;
 	}
-	swaybg_log(LOG_INFO, "Changed background image to %s", path);
+
+	if (strcmp(command, "cache") == 0) {
+		if (!ipc_has_args(message, 3)) {
+			ipc_reply(message, false, "Usage: cache <id> <path>");
+			return;
+		}
+		const char *id = ipc_message_arg(message, 1);
+		const char *path = ipc_message_arg(message, 2);
+		if (!valid_cache_id(id)) {
+			ipc_reply(message, false,
+				"Cache ID must use 1-128 letters, numbers, '.', '-', or '_'");
+			return;
+		}
+		if (find_cache_entry(state, id)) {
+			ipc_reply(message, false, "Cache ID already exists");
+			return;
+		}
+		cairo_surface_t *surface = load_background_image(path);
+		if (!surface) {
+			ipc_reply(message, false, "Unable to load image");
+			return;
+		}
+		struct swaybg_cache_entry *entry = calloc(1, sizeof(*entry));
+		if (!entry || !(entry->id = strdup(id)) ||
+				!(entry->path = strdup(path))) {
+			if (entry) {
+				free(entry->id);
+				free(entry->path);
+				free(entry);
+			}
+			cairo_surface_destroy(surface);
+			ipc_reply(message, false, "Unable to allocate cache entry");
+			return;
+		}
+		entry->surface = surface;
+		wl_list_insert(state->cache.prev, &entry->link);
+		char response[160];
+		snprintf(response, sizeof(response), "Cached %s", id);
+		ipc_reply(message, true, response);
+		return;
+	}
+
+	if (strcmp(command, "set") == 0) {
+		if (!ipc_has_args(message, 2)) {
+			ipc_reply(message, false, "Usage: set <path>");
+			return;
+		}
+		const char *path = ipc_message_arg(message, 1);
+		cairo_surface_t *surface = load_background_image(path);
+		if (!surface) {
+			ipc_reply(message, false, "Unable to load image");
+			return;
+		}
+		bool shown = show_surface(state, path, surface, NULL);
+		cairo_surface_destroy(surface);
+		if (!shown) {
+			ipc_reply(message, false, "Unable to display image");
+			return;
+		}
+		ipc_reply(message, true, "Showing uncached image");
+		return;
+	}
+
+	if (strcmp(command, "show") == 0) {
+		if (!ipc_has_args(message, 2)) {
+			ipc_reply(message, false, "Usage: show <id>");
+			return;
+		}
+		const char *id = ipc_message_arg(message, 1);
+		struct swaybg_cache_entry *entry = find_cache_entry(state, id);
+		if (!entry) {
+			ipc_reply(message, false, "Cache ID not found");
+			return;
+		}
+		if (!show_surface(state, entry->path, entry->surface, entry)) {
+			ipc_reply(message, false, "Unable to select cached image");
+			return;
+		}
+		char response[160];
+		snprintf(response, sizeof(response), "Showing %s", id);
+		ipc_reply(message, true, response);
+		return;
+	}
+
+	if (strcmp(command, "drop") == 0) {
+		if (!ipc_has_args(message, 2)) {
+			ipc_reply(message, false, "Usage: drop <id>");
+			return;
+		}
+		const char *id = ipc_message_arg(message, 1);
+		struct swaybg_cache_entry *entry = find_cache_entry(state, id);
+		if (!entry) {
+			ipc_reply(message, false, "Cache ID not found");
+			return;
+		}
+		if (state->active_cache == entry) {
+			state->active_cache = NULL;
+		}
+		destroy_cache_entry(entry);
+		char response[160];
+		snprintf(response, sizeof(response), "Dropped %s", id);
+		ipc_reply(message, true, response);
+		return;
+	}
+
+	if (strcmp(command, "clear") == 0) {
+		if (!ipc_has_args(message, 1)) {
+			ipc_reply(message, false, "Usage: clear");
+			return;
+		}
+		size_t count = 0;
+		state->active_cache = NULL;
+		struct swaybg_cache_entry *entry, *tmp;
+		wl_list_for_each_safe(entry, tmp, &state->cache, link) {
+			destroy_cache_entry(entry);
+			++count;
+		}
+		char response[80];
+		snprintf(response, sizeof(response), "Cleared %zu cache entries", count);
+		ipc_reply(message, true, response);
+		return;
+	}
+
+	if (strcmp(command, "status") == 0) {
+		if (!ipc_has_args(message, 1)) {
+			ipc_reply(message, false, "Usage: status");
+			return;
+		}
+		char *response = NULL;
+		size_t response_size = 0;
+		FILE *stream = open_memstream(&response, &response_size);
+		if (!stream) {
+			ipc_reply(message, false, "Unable to create status response");
+			return;
+		}
+		if (state->active_cache) {
+			fprintf(stream, "current: %s\n", state->active_cache->id);
+		} else if (state->current_path) {
+			fprintf(stream, "current: uncached (%s)\n", state->current_path);
+		} else {
+			fprintf(stream, "current: startup configuration\n");
+		}
+		if (wl_list_empty(&state->cache)) {
+			fprintf(stream, "cache: empty");
+		} else {
+			fprintf(stream, "cache:");
+			struct swaybg_cache_entry *entry;
+			wl_list_for_each(entry, &state->cache, link) {
+				fprintf(stream, "\n%c %s %dx%d %s",
+					entry == state->active_cache ? '*' : '-',
+					entry->id,
+					cairo_image_surface_get_width(entry->surface),
+					cairo_image_surface_get_height(entry->surface),
+					entry->path);
+			}
+		}
+		fclose(stream);
+		ipc_reply(message, true, response ? response : "");
+		free(response);
+		return;
+	}
+
+	ipc_reply(message, false, "Unknown command");
 }
 
 static int dispatch_next_event(struct swaybg_state *state) {
@@ -334,9 +526,9 @@ static int dispatch_next_event(struct swaybg_state *state) {
 		return -1;
 	}
 	if (fds[1].revents & POLLIN) {
-		char *path = ipc_receive_path(state->socket_fd);
-		if (path) {
-			apply_ipc_image(state, path);
+		struct ipc_message message;
+		if (ipc_receive_message(state->socket_fd, &message) == 0) {
+			handle_ipc_command(state, &message);
 		}
 	}
 	if (fds[0].revents & POLLIN) {
@@ -707,6 +899,7 @@ int main(int argc, char **argv) {
 	wl_list_init(&state.configs);
 	wl_list_init(&state.outputs);
 	wl_list_init(&state.images);
+	wl_list_init(&state.cache);
 
 	parse_command_line(argc, argv, &state);
 
@@ -776,7 +969,7 @@ int main(int argc, char **argv) {
 						output->configure_serial);
 			}
 
-			if (output->dirty) {
+			if (output->dirty && !state.current_path) {
 				uint32_t buffer_width, buffer_height;
 				get_buffer_size(output, &buffer_width, &buffer_height);
 				bool buffer_change = output->buffer_width != buffer_width ||
@@ -787,32 +980,52 @@ int main(int argc, char **argv) {
 			}
 		}
 
-		// Load images, render associated frames, and unload
-		wl_list_for_each(image, &state.images, link) {
-			if (!image->load_required) {
-				continue;
-			}
-
-			cairo_surface_t *surface = load_background_image(image->path);
-			if (!surface) {
-				swaybg_log(LOG_ERROR, "Failed to load image: %s", image->path);
-				continue;
-			}
-
-			wl_list_for_each(output, &state.outputs, link) {
-				if (output->dirty && output->config->image == image) {
-					output->dirty = false;
-					render_frame(output, surface);
+		// Reuse the selected cached surface, or reload it if it was dropped.
+		if (state.current_path) {
+			cairo_surface_t *surface = state.active_cache
+				? state.active_cache->surface
+				: load_background_image(state.current_path);
+			if (surface) {
+				wl_list_for_each(output, &state.outputs, link) {
+					if (output->dirty) {
+						output->dirty = false;
+						render_frame(output, surface);
+					}
+				}
+				if (!state.active_cache) {
+					cairo_surface_destroy(surface);
 				}
 			}
+		}
 
-			image->load_required = false;
-			cairo_surface_destroy(surface);
+		// Load images, render associated frames, and unload
+		if (!state.current_path) {
+			wl_list_for_each(image, &state.images, link) {
+				if (!image->load_required) {
+					continue;
+				}
+
+				cairo_surface_t *surface = load_background_image(image->path);
+				if (!surface) {
+					swaybg_log(LOG_ERROR, "Failed to load image: %s", image->path);
+					continue;
+				}
+
+				wl_list_for_each(output, &state.outputs, link) {
+					if (output->dirty && output->config->image == image) {
+						output->dirty = false;
+						render_frame(output, surface);
+					}
+				}
+
+				image->load_required = false;
+				cairo_surface_destroy(surface);
+			}
 		}
 
 		// Redraw outputs without associated image
 		wl_list_for_each(output, &state.outputs, link) {
-			if (output->dirty) {
+			if (output->dirty && !state.current_path) {
 				output->dirty = false;
 				render_frame(output, NULL);
 			}
@@ -833,6 +1046,12 @@ int main(int argc, char **argv) {
 	wl_list_for_each_safe(image, tmp_image, &state.images, link) {
 		destroy_swaybg_image(image);
 	}
+
+	struct swaybg_cache_entry *entry, *tmp_entry;
+	wl_list_for_each_safe(entry, tmp_entry, &state.cache, link) {
+		destroy_cache_entry(entry);
+	}
+	free(state.current_path);
 
 	ipc_close_server(state.socket_fd, state.socket_path);
 

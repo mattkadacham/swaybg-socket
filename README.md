@@ -12,13 +12,30 @@ Start swaybg with a Unix socket:
 
     swaybg --socket "$XDG_RUNTIME_DIR/swaybg.sock" --image /path/to/image.jpg
 
-Then replace the image without recreating the Wayland surfaces:
+Change the image immediately without caching it:
 
     swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" /path/to/new-image.jpg
 
-The new image is applied to all configured outputs. Each output keeps its
-current scaling mode. A color-only output switches to `stretch` mode when it
-receives an image.
+Cache decoded images under reusable IDs:
+
+    swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" cache forest /path/to/forest.jpg
+    swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" cache city /path/to/city.jpg
+
+Switch images without decoding them again:
+
+    swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" show forest
+
+Inspect or release cached images:
+
+    swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" status
+    swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" drop city
+    swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" clear
+
+`show` applies the image to all configured outputs without recreating their
+Wayland surfaces. Each output keeps its current scaling mode. A color-only
+output switches to `stretch` mode when it receives an image. Dropping or
+clearing the active cache entry leaves the committed wallpaper visible; swaybg
+reloads its path if an output later needs to be redrawn.
 
 ## Release Signatures
 

@@ -27,6 +27,7 @@ sudo apt install libgdk-pixbuf-2.0-dev scdoc
 ```sh
 meson setup build
 ninja -C build
+meson test -C build
 ```
 
 Configuring the build generates the Wayland protocol headers and

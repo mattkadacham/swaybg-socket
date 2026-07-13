@@ -35,9 +35,8 @@ these options.
 	apply to this output. The special value _\*_ selects all outputs.
 
 *-s, --socket* <path>
-	Listen on a Unix socket for runtime image changes. Send an image with
-	*swaybgctl* <socket-path> <image-path>. The image is applied to all
-	configured outputs without recreating their Wayland surfaces.
+	Listen on a Unix socket for runtime cache and image-change commands from
+	*swaybgctl*.
 
 *-v, --version*
 	Show the version number and quit.
@@ -50,14 +49,44 @@ Start swaybg with an IPC socket:
 swaybg --socket "$XDG_RUNTIME_DIR/swaybg.sock" --image /path/to/image.jpg
 ```
 
-Change the image from another process:
+Cache and show images from another process:
 
 ```
-swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" /path/to/new-image.jpg
+swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" cache forest /path/to/forest.jpg
+swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" show forest
 ```
 
-The replacement applies to all configured outputs and preserves their image
-scaling modes. Color-only outputs switch to _stretch_ mode.
+An image path can also be displayed immediately without caching it:
+
+```
+swaybgctl "$XDG_RUNTIME_DIR/swaybg.sock" /path/to/image.jpg
+```
+
+Available commands are:
+
+*set* <path>
+	Decode and display an uncached image. Passing the path directly without the
+	_set_ command is equivalent.
+
+*cache* <id> <path>
+	Decode an image and retain its Cairo surface under _id_. IDs may contain
+	letters, numbers, periods, hyphens, and underscores.
+
+*show* <id>
+	Display a cached image on all configured outputs without decoding it again.
+
+*drop* <id>
+	Release one cached image. If it is currently displayed, the committed
+	wallpaper remains visible and can be reloaded from disk when required.
+
+*clear*
+	Release all cached images without changing the committed wallpaper.
+
+*status*
+	List cached IDs, dimensions, paths, and the active cache entry.
+
+Image changes preserve each output's scaling mode. Color-only outputs switch
+to _stretch_ mode when an image is shown.
 
 # AUTHORS
 

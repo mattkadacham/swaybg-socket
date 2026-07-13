@@ -118,6 +118,16 @@ executable(
 	install: true,
 )
 
+ipc_test = executable(
+	'ipc-test',
+	[
+		'ipc.c',
+		'tests/ipc.c',
+	],
+	include_directories: 'include',
+)
+test('ipc', ipc_test)
+
 if scdoc.found()
 	mandir = get_option('mandir')
 	man_files = [
