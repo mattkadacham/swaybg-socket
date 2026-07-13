@@ -88,7 +88,7 @@ foreach filename : client_protocols
 endforeach
 
 executable(
-	'swaybg',
+	'swaybgsock',
 	[
 		'background-image.c',
 		'cairo.c',
@@ -109,7 +109,7 @@ executable(
 )
 
 executable(
-	'swaybgctl',
+	'swaybgsockctl',
 	[
 		'ipc.c',
 		'swaybgctl.c',
@@ -131,7 +131,7 @@ test('ipc', ipc_test)
 if scdoc.found()
 	mandir = get_option('mandir')
 	man_files = [
-		'swaybg.1.scd',
+		'swaybgsock.1.scd',
 	]
 	foreach filename : man_files
 		topic = filename.split('.')[-3].split('/')[-1]

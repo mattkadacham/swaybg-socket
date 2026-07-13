@@ -1,12 +1,12 @@
-swaybg(1)
+swaybgsock(1)
 
 # NAME
 
-swaybg - Background for Wayland
+swaybgsock - Background for Wayland
 
 # SYNOPSIS
 
-*swaybg* [options...]
+*swaybgsock* [options...]
 
 Displays a background image on all outputs of your Wayland session.
 
@@ -39,33 +39,33 @@ these options.
 
 *-s, --socket* <path>
 	Listen at _path_ for runtime cache and image-change commands from
-	*swaybgctl*. The default is _$XDG_RUNTIME_DIR/swaybg.sock_.
+	*swaybgsockctl*. The default is _$XDG_RUNTIME_DIR/swaybg.sock_.
 
 *-v, --version*
 	Show the version number and quit.
 
 # RUNTIME IMAGE CHANGES
 
-Start swaybg. IPC is enabled by default:
+Start swaybgsock. IPC is enabled by default:
 
 ```
-swaybg --image /path/to/image.jpg
+swaybgsock --image /path/to/image.jpg
 ```
 
-With no image or color, swaybg displays black until it receives a command.
+With no image or color, swaybgsock displays black until it receives a command.
 
 Cache and show images from another process:
 
 ```
-swaybgctl --mode fill cache forest /path/to/forest.jpg
-swaybgctl show forest
+swaybgsockctl --mode fill cache forest /path/to/forest.jpg
+swaybgsockctl show forest
 ```
 
 An image path can also be displayed immediately without caching it:
 
 ```
-swaybgctl /path/to/image.jpg
-swaybgctl --mode fit /path/to/image.jpg
+swaybgsockctl /path/to/image.jpg
+swaybgsockctl --mode fit /path/to/image.jpg
 ```
 
 Available commands are:
@@ -108,7 +108,7 @@ _stretch_ mode when an image is shown.
 Caching retains the decoded image. Scaling and cropping still occur when the
 image is shown because they depend on each output's dimensions and scale.
 
-*swaybgctl* connects to _$XDG_RUNTIME_DIR/swaybg.sock_ by default. Pass
+*swaybgsockctl* connects to _$XDG_RUNTIME_DIR/swaybg.sock_ by default. Pass
 _--socket <path>_ before the command to use a different socket.
 
 # AUTHORS

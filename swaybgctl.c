@@ -11,15 +11,15 @@
 
 static void usage(FILE *stream) {
 	fprintf(stream,
-		"Usage: swaybgctl [--socket <path>] [-m <mode>] <image-path>\n"
-		"       swaybgctl [--socket <path>] [-m <mode>] set <image-path>\n"
-		"       swaybgctl [--socket <path>] [-m <mode>] cache <id> <image-path>\n"
-		"       swaybgctl [--socket <path>] show <id>\n"
-		"       swaybgctl [--socket <path>] next\n"
-		"       swaybgctl [--socket <path>] prev\n"
-		"       swaybgctl [--socket <path>] drop <id>\n"
-		"       swaybgctl [--socket <path>] clear\n"
-		"       swaybgctl [--socket <path>] status\n"
+		"Usage: swaybgsockctl [--socket <path>] [-m <mode>] <image-path>\n"
+		"       swaybgsockctl [--socket <path>] [-m <mode>] set <image-path>\n"
+		"       swaybgsockctl [--socket <path>] [-m <mode>] cache <id> <image-path>\n"
+		"       swaybgsockctl [--socket <path>] show <id>\n"
+		"       swaybgsockctl [--socket <path>] next\n"
+		"       swaybgsockctl [--socket <path>] prev\n"
+		"       swaybgsockctl [--socket <path>] drop <id>\n"
+		"       swaybgsockctl [--socket <path>] clear\n"
+		"       swaybgsockctl [--socket <path>] status\n"
 		"\n"
 		"The default socket is $XDG_RUNTIME_DIR/swaybg.sock.\n");
 }

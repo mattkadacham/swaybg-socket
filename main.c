@@ -873,7 +873,7 @@ static void parse_command_line(int argc, char **argv,
 	};
 
 	const char *usage =
-		"Usage: swaybg <options...>\n"
+		"Usage: swaybgsock <options...>\n"
 		"\n"
 		"  -c, --color RRGGBB     Set the background color.\n"
 		"  -h, --help             Show help message and quit.\n"
@@ -902,7 +902,7 @@ static void parse_command_line(int argc, char **argv,
 		switch (c) {
 		case 'c':  // color
 			if (!parse_color(optarg, &config->color)) {
-				swaybg_log(LOG_ERROR, "%s is not a valid color for swaybg. "
+				swaybg_log(LOG_ERROR, "%s is not a valid color for swaybgsock. "
 					"Color should be specified as rrggbb or #rrggbb (no alpha).", optarg);
 				continue;
 			}
@@ -935,7 +935,7 @@ static void parse_command_line(int argc, char **argv,
 			state->socket_path = NULL;
 			break;
 		case 'v':  // version
-			fprintf(stdout, "swaybg version " SWAYBG_VERSION "\n");
+			fprintf(stdout, "swaybgsock version " SWAYBG_VERSION "\n");
 			exit(EXIT_SUCCESS);
 			break;
 		default:
