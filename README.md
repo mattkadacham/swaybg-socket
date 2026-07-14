@@ -4,45 +4,45 @@ swaybg is a wallpaper utility for Wayland compositors. It is compatible with
 any Wayland compositor which implements the wlr-layer-shell protocol and
 `wl_output` version 4.
 
-See the man page, `swaybgsock(1)`, for instructions on using this fork.
+See the man page, `bgsock(1)`, for instructions on using this fork.
 
 ## Changing the image at runtime
 
-Start swaybgsock. It listens on `$XDG_RUNTIME_DIR/swaybg.sock` by default:
+Start bgsock. It listens on `$XDG_RUNTIME_DIR/swaybg.sock` by default:
 
-    swaybgsock --image /path/to/image.jpg
+    bgsock --image /path/to/image.jpg
 
-With no appearance options, swaybgsock starts with a black background so it can
-be controlled entirely through `swaybgsockctl`:
+With no appearance options, bgsock starts with a black background so it can be
+controlled entirely through `bgctl`:
 
-    swaybgsock
+    bgsock
 
 Use `--socket <path>` to listen elsewhere or `--no-socket` to disable IPC.
 
 Change the image immediately without caching it:
 
-    swaybgsockctl /path/to/new-image.jpg
-    swaybgsockctl --mode fill /path/to/new-image.jpg
+    bgctl /path/to/new-image.jpg
+    bgctl --mode fill /path/to/new-image.jpg
 
 Cache decoded images under reusable IDs:
 
-    swaybgsockctl --mode fill cache forest /path/to/forest.jpg
-    swaybgsockctl --mode fit cache city /path/to/city.jpg
+    bgctl --mode fill cache forest /path/to/forest.jpg
+    bgctl --mode fit cache city /path/to/city.jpg
 
 Switch images without decoding them again:
 
-    swaybgsockctl show forest
-    swaybgsockctl next
-    swaybgsockctl prev
+    bgctl show forest
+    bgctl next
+    bgctl prev
 
 Inspect or release cached images:
 
-    swaybgsockctl status
-    swaybgsockctl drop city
-    swaybgsockctl clear
+    bgctl status
+    bgctl drop city
+    bgctl clear
 
 `--mode` accepts the same `stretch`, `fill`, `fit`, `center`, and `tile` values
-as swaybgsock. An uncached image uses the supplied mode immediately. A cached image
+as bgsock. An uncached image uses the supplied mode immediately. A cached image
 remembers its mode, and `show`, `next`, and `prev` apply it whenever that entry
 is selected. If no mode is supplied, each output keeps its current scaling
 mode; a color-only output switches to `stretch` when it receives an image.
@@ -51,13 +51,13 @@ The cache retains the decoded image, so selecting it does not read or decode
 the file again. Scaling and cropping are still calculated when it is shown
 because those depend on each output's current dimensions and scale. Dropping
 or clearing the active cache entry leaves the committed wallpaper visible;
-swaybgsock reloads its path if an output later needs to be redrawn.
+bgsock reloads its path if an output later needs to be redrawn.
 
 `next` and `prev` follow cache insertion order and wrap at either end. If an
 uncached image is active, they start at the first or last cached image.
 
-`swaybgsockctl` connects to the same default socket. Use `--socket <path>` to
-connect to a swaybgsock instance listening elsewhere.
+`bgctl` connects to the same default socket. Use `--socket <path>` to connect
+to a bgsock instance listening elsewhere.
 
 ## Release Signatures
 
